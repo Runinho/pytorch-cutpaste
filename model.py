@@ -34,3 +34,17 @@ class ProjectionNet(nn.Module):
         embeds = self.resnet18(x)
         logits = self.out(embeds)
         return embeds, logits
+    
+    def freeze_resnet(self):
+        # freez full resnet18
+        for param in self.resnet18.parameters():
+            param.requires_grad = False
+        
+        #unfreeze head:
+        for param in self.resnet18.fc.parameters():
+            param.requires_grad = True
+            
+    def unfreeze(self):
+        #unfreeze all:
+        for param in self.parameters():
+            param.requires_grad = True

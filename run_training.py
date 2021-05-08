@@ -8,25 +8,30 @@ import argparse
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
+
 
 from dataset import MVTecAT
 from cutpaste import CutPaste, cut_paste_collate_fn
 from model import ProjectionNet
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from eval import eval_model
 
-def run_training(data_type="screw"):
+def run_training(data_type="screw",
+                 model_dir="models",
+                 epochs=256,
+                 pretrained=True,
+                 test_epochs=10,
+                 freeze_resnet=20,
+                 learninig_rate=0.03):
     torch.multiprocessing.freeze_support()
     # TODO: use script params for hyperparameter
     # Temperature Hyperparameter currently not used
     temperature = 0.2
-    epochs = 64*4
     device = "cuda"
-    pretrained = True
 
     weight_decay = 0.00003
-    learninig_rate = 0.03
     momentum = 0.9
     #TODO: use f strings also for the date LOL
     model_name = f"model-{data_type}" + '-{date:%Y-%m-%d_%H_%M_%S}'.format(date=datetime.datetime.now() )
@@ -38,19 +43,21 @@ def run_training(data_type="screw"):
     # create Training Dataset and Dataloader
     after_cutpaste_transform = transforms.Compose([])
     after_cutpaste_transform.transforms.append(transforms.ToTensor())
+    after_cutpaste_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                    std=[0.229, 0.224, 0.225]))
     #TODO: we might want to normalize the images.
 
     train_transform = transforms.Compose([])
-    # train_transform.transforms.append(transforms.Resize((256,256)))
     train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
     train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
+    train_transform.transforms.append(transforms.Resize((256,256)))
     train_transform.transforms.append(CutPaste(transform = after_cutpaste_transform))
     # train_transform.transforms.append(transforms.ToTensor())
 
-    train_data = MVTecAT("Data", data_type, transform = train_transform, size=size)
-    dataloader = DataLoader(train_data, batch_size=32,
+    train_data = MVTecAT("Data", data_type, transform = train_transform, size=int(size * (1/min_scale)))
+    dataloader = DataLoader(train_data, batch_size=64,
                             shuffle=True, num_workers=8, collate_fn=cut_paste_collate_fn,
-                            persistent_workers=True)
+                            persistent_workers=True, pin_memory=True, prefetch_factor=5)
 
     # Writer will output to ./runs/ directory by default
     writer = SummaryWriter(Path("logdirs") / model_name)
@@ -58,6 +65,9 @@ def run_training(data_type="screw"):
     # create Model:
     model = ProjectionNet(pretrained=pretrained)
     model.to(device)
+
+    if freeze_resnet > 0:
+        model.freeze_resnet()
 
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=learninig_rate, momentum=momentum,  weight_decay=weight_decay)
@@ -67,6 +77,8 @@ def run_training(data_type="screw"):
     import torch.autograd.profiler as profiler
     num_batches = len(dataloader)
     for epoch in tqdm(range(epochs)):
+        if epoch == freeze_resnet:
+            model.unfreeze()
         for batch_idx, data in enumerate(dataloader):
             x1, x2 = data
             x1 = x1.to(device)
@@ -105,15 +117,45 @@ def run_training(data_type="screw"):
     #         print(y)
             accuracy = torch.true_divide(torch.sum(predicted==y), predicted.size(0))
             writer.add_scalar('acc', accuracy, step)
+            writer.add_scalar('lr', scheduler.get_last_lr()[0], step)
             
             step += 1
         writer.add_scalar('epoch', epoch, step)
-    torch.save(model.state_dict(), Path("models") / f"{model_name}.tch")
+
+        # run tests
+        if test_epochs > 0:
+            if epoch % test_epochs == 0:
+                # run auc calculation
+                #TODO: create dataset only once.
+                #TODO: train predictor here
+                roc_auc= eval_model(model_name, data_type, device=device, save_plots=False, size=size, show_training_data=False, model=model)
+                writer.add_scalar('eval_auc', roc_auc, step)
+
+
+    torch.save(model.state_dict(), model_dir / f"{model_name}.tch")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Training defect detection as described in the CutPaste Paper.')
     parser.add_argument('--type', default="all",
                         help='MVTec defection dataset type to train seperated by , (default: "all": train all defect types)')
+
+    parser.add_argument('--epochs', default=256, type=int,
+                        help='number of epochs to train the model , (default: 256)')
+    
+    parser.add_argument('--model_dir', default="models",
+                        help='output folder of the models , (default: models)')
+    
+    parser.add_argument('--no-pretrained', dest='pretrained', default=True, action='store_false',
+                        help='use pretrained values to initalize ResNet18 , (default: True)')
+    
+    parser.add_argument('--test_epochs', default=10,
+                        help='interval to calculate the auc during trainig, if -1 do not calculate test scores, (default: 10)')                  
+
+    parser.add_argument('--freeze_resnet', default=20,
+                        help='number of epochs to freeze resnet (default: 20)')
+    
+    parser.add_argument('--lr', default=0.03, type=float,
+                        help='learning rate (default: 0.03)')         
 
     args = parser.parse_args()
     print(args)
@@ -138,6 +180,15 @@ if __name__ == '__main__':
     else:
         types = args.type.split(",")
     
+    # create modle dir
+    Path(args.model_dir).mkdir(exist_ok=True, parents=True)
+
     for data_type in types:
         print(f"training {data_type}")
-        run_training(data_type)
+        run_training(data_type,
+                     model_dir=Path(args.model_dir),
+                     epochs=args.epochs,
+                     pretrained=args.pretrained,
+                     test_epochs=args.test_epochs,
+                     freeze_resnet=args.freeze_resnet,
+                     learninig_rate=args.lr)
