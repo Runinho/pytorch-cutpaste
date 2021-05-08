@@ -12,23 +12,28 @@ import argparse
 from pathlib import Path
 from cutpaste import CutPaste, cut_paste_collate_fn
 from sklearn.utils import shuffle
+from sklearn.model_selection import GridSearchCV
+import numpy as np
 
-def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True):
+def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True, model=None):
     # create test dataset
     test_transform = transforms.Compose([])
     test_transform.transforms.append(transforms.Resize((size,size)))
     test_transform.transforms.append(transforms.ToTensor())
+    test_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                          std=[0.229, 0.224, 0.225]))
     test_data = MVTecAT("Data", defect_type, size, transform = test_transform, mode="test")
 
     dataloader_test = DataLoader(test_data, batch_size=64,
                             shuffle=False, num_workers=0)
 
     # create model
-    print(f"loading model {modelname}")
-    model = ProjectionNet(pretrained=False)
-    model.load_state_dict(torch.load(modelname))
-    model.to(device)
-    model.eval()
+    if model is None:
+        print(f"loading model {modelname}")
+        model = ProjectionNet(pretrained=False)
+        model.load_state_dict(torch.load(modelname))
+        model.to(device)
+        model.eval()
 
     #get embeddings for test data
     labels = []
@@ -73,6 +78,8 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
             # create Training Dataset and Dataloader
             after_cutpaste_transform = transforms.Compose([])
             after_cutpaste_transform.transforms.append(transforms.ToTensor())
+            after_cutpaste_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                            std=[0.229, 0.224, 0.225]))
             #TODO: we might want to normalize the images.
 
             train_transform = transforms.Compose([])
@@ -112,14 +119,26 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
             tsne_labels = labels
             tsne_embeds = embeds
         plot_tsne(tsne_labels, tsne_embeds, eval_dir / "tsne.png")
-    # estemate KDE parameters
+    else:
+        eval_dir = Path("unused")
+    # # estemate KDE parameters
+    # # use grid search cross-validation to optimize the bandwidth
+    # params = {'bandwidth': np.logspace(-10, 10, 50)}
+    # grid = GridSearchCV(KernelDensity(), params)
+    # grid.fit(embeds)
+
+    # print("best bandwidth: {0}".format(grid.best_estimator_.bandwidth))
+
+    # # use the best estimator to compute the kernel density estimate
+    # kde = grid.best_estimator_
     kde = KernelDensity(kernel='gaussian', bandwidth=1).fit(train_embed)
     scores = kde.score_samples(embeds)
+    # print(scores)
     # we get the probability to be in the correct distribution
     # but our labels are inverted (1 for out of distribution)
     # so we have to relabel 
 
-    roc_auc = plot_roc(labels == False, scores, eval_dir / "roc_plot.png", modelname=modelname, save_plots=save_plots)
+    roc_auc = plot_roc(labels, scores, eval_dir / "roc_plot.png", modelname=modelname, save_plots=save_plots)
     
 
     return roc_auc
