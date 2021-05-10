@@ -25,7 +25,6 @@ class MVTecAT(Dataset):
             self.image_names = list((self.root_dir / defect_name / "train" / "good").glob("*.png"))
             print("loading images")
             # during training we cache the smaller images for performance reasons (not a good coding style)
-            # TODO: maybe use multiple transforms where the first one is cached :D OR resize every image of the dataset beforehand
             self.imgs = [Image.open(file).resize((size,size)).convert("RGB") for file in self.image_names]
         else:
             #test mode
