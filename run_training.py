@@ -26,7 +26,8 @@ def run_training(data_type="screw",
                  freeze_resnet=20,
                  learninig_rate=0.03,
                  optim_name="SGD",
-                 batch_size=64):
+                 batch_size=64,
+                 head_layer=8):
     torch.multiprocessing.freeze_support()
     # TODO: use script params for hyperparameter
     # Temperature Hyperparameter currently not used
@@ -64,7 +65,9 @@ def run_training(data_type="screw",
     writer = SummaryWriter(Path("logdirs") / model_name)
 
     # create Model:
-    model = ProjectionNet(pretrained=pretrained, head_layers=[512,512,512,512,512,512,512,512,128])
+    head_layers = [512]*head_layer+[128]
+    print(head_layers)
+    model = ProjectionNet(pretrained=pretrained, head_layers=head_layers)
     model.to(device)
 
     if freeze_resnet > 0:
@@ -183,10 +186,14 @@ if __name__ == '__main__':
                         help='learning rate (default: 0.03)')
 
     parser.add_argument('--optim', default="sgd",
-                        help='optimizing algorithm (dafault: "sgd")')
+                        help='optimizing algorithm values:[sgd, adam] (dafault: "sgd")')
 
     parser.add_argument('--batch_size', default=64, type=int,
                         help='batch size, real batchsize is depending on cut paste config normal cutaout has effective batchsize of 2x batchsize (dafault: "64")')   
+
+    parser.add_argument('--head_layer', default=8, type=int,
+                    help='number of layers in the projection head (default: 8)')
+
 
     args = parser.parse_args()
     print(args)
@@ -224,4 +231,5 @@ if __name__ == '__main__':
                      freeze_resnet=args.freeze_resnet,
                      learninig_rate=args.lr,
                      optim_name=args.optim,
-                     batch_size=args.batch_size)
+                     batch_size=args.batch_size,
+                     head_layer=args.head_layer)
