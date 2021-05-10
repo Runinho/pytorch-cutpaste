@@ -14,8 +14,26 @@ from cutpaste import CutPaste, cut_paste_collate_fn
 from sklearn.utils import shuffle
 from sklearn.model_selection import GridSearchCV
 import numpy as np
+from sklearn.covariance import LedoitWolf
+from collections import defaultdict
+import pandas as pd
 
-def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True, model=None):
+def get_train_embeds(model, size, defect_type, transform, device):
+    # train data / train kde
+    test_data = MVTecAT("Data", defect_type, size, transform=transform, mode="train")
+
+    dataloader_train = DataLoader(test_data, batch_size=64,
+                            shuffle=False, num_workers=0)
+    train_embed = []
+    with torch.no_grad():
+        for x in dataloader_train:
+            embed, logit = model(x.to(device))
+
+            train_embed.append(embed.cpu())
+    train_embed = torch.cat(train_embed)
+    return train_embed
+
+def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True, model=None, train_embed=None, head_layer=8):
     # create test dataset
     test_transform = transforms.Compose([])
     test_transform.transforms.append(transforms.Resize((size,size)))
@@ -25,12 +43,14 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
     test_data = MVTecAT("Data", defect_type, size, transform = test_transform, mode="test")
 
     dataloader_test = DataLoader(test_data, batch_size=64,
-                            shuffle=False, num_workers=0)
+                                 shuffle=False, num_workers=0)
 
     # create model
     if model is None:
         print(f"loading model {modelname}")
-        model = ProjectionNet(pretrained=False)
+        head_layers = [512]*head_layer+[128]
+        print(head_layers)
+        model = ProjectionNet(pretrained=False, head_layers=head_layers)
         model.load_state_dict(torch.load(modelname))
         model.to(device)
         model.eval()
@@ -48,19 +68,12 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
     labels = torch.cat(labels)
     embeds = torch.cat(embeds)
 
-    # train data / train kde
-    # TODO: put the GDE stuff into the Model class and do this at the end of the training
-    test_data = MVTecAT("Data", defect_type, size, transform=test_transform, mode="train")
+    if train_embed is None:
+        train_embed = get_train_embeds(model, size, defect_type, test_transform, device)
 
-    dataloader_train = DataLoader(test_data, batch_size=64,
-                            shuffle=False, num_workers=0)
-    train_embed = []
-    with torch.no_grad():
-        for x in dataloader_train:
-            embed, logit = model(x.to(device))
-
-            train_embed.append(embed.cpu())
-    train_embed = torch.cat(train_embed)
+    # norm embeds
+    embeds = torch.nn.functional.normalize(embeds, p=2, dim=1)
+    train_embed = torch.nn.functional.normalize(train_embed, p=2, dim=1)
 
     #create eval plot dir
     if save_plots:
@@ -72,7 +85,8 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
         show_training_data = False
         if show_training_data:
             #augmentation settig
-            # TODO: but all of this in the same place and put it into the args
+            # TODO: do all of this in a seperate function that we can call in training and evaluation.
+            #       very ugly to just copy the code lol
             min_scale = 0.5
 
             # create Training Dataset and Dataloader
@@ -80,7 +94,6 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
             after_cutpaste_transform.transforms.append(transforms.ToTensor())
             after_cutpaste_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                             std=[0.229, 0.224, 0.225]))
-            #TODO: we might want to normalize the images.
 
             train_transform = transforms.Compose([])
             #train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
@@ -121,6 +134,7 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
         plot_tsne(tsne_labels, tsne_embeds, eval_dir / "tsne.png")
     else:
         eval_dir = Path("unused")
+    # TODO: put the GDE stuff into the Model class and do this at the end of the training
     # # estemate KDE parameters
     # # use grid search cross-validation to optimize the bandwidth
     # params = {'bandwidth': np.logspace(-10, 10, 50)}
@@ -131,14 +145,45 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
 
     # # use the best estimator to compute the kernel density estimate
     # kde = grid.best_estimator_
-    kde = KernelDensity(kernel='gaussian', bandwidth=1).fit(train_embed)
-    scores = kde.score_samples(embeds)
+    # kde = KernelDensity(kernel='gaussian', bandwidth=1).fit(train_embed)
+    # scores = kde.score_samples(embeds)
     # print(scores)
     # we get the probability to be in the correct distribution
     # but our labels are inverted (1 for out of distribution)
     # so we have to relabel 
 
-    roc_auc = plot_roc(labels, scores, eval_dir / "roc_plot.png", modelname=modelname, save_plots=save_plots)
+    # use own formulation with malanobis distance
+    # from https://github.com/ORippler/gaussian-ad-mvtec/blob/4e85fb5224eee13e8643b684c8ef15ab7d5d016e/src/gaussian/model.py#L308
+    def mahalanobis_distance(
+        values: torch.Tensor, mean: torch.Tensor, inv_covariance: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute the batched mahalanobis distance.
+        values is a batch of feature vectors.
+        mean is either the mean of the distribution to compare, or a second
+        batch of feature vectors.
+        inv_covariance is the inverse covariance of the target distribution.
+        """
+        assert values.dim() == 2
+        assert 1 <= mean.dim() <= 2
+        assert len(inv_covariance.shape) == 2
+        assert values.shape[1] == mean.shape[-1]
+        assert mean.shape[-1] == inv_covariance.shape[0]
+        assert inv_covariance.shape[0] == inv_covariance.shape[1]
+
+        if mean.dim() == 1:  # Distribution mean.
+            mean = mean.unsqueeze(0)
+        x_mu = values - mean  # batch x features
+        # Same as dist = x_mu.t() * inv_covariance * x_mu batch wise
+        dist = torch.einsum("im,mn,in->i", x_mu, inv_covariance, x_mu)
+        return dist.sqrt()
+    # claculate mean
+    mean = torch.mean(train_embed, axis=0)
+    inv_cov = torch.Tensor(LedoitWolf().fit(train_embed.cpu()).precision_,device="cpu")
+
+    distances = mahalanobis_distance(embeds, mean, inv_cov)
+    #TODO: set threshold on mahalanobis distances and use "real" probabilities
+
+    roc_auc = plot_roc(labels, distances, eval_dir / "roc_plot.png", modelname=modelname, save_plots=save_plots)
     
 
     return roc_auc
@@ -169,7 +214,7 @@ def plot_roc(labels, scores, filename, modelname="", save_plots=False):
     return roc_auc
 
 def plot_tsne(labels, embeds, filename):
-    tsne = TSNE(n_components=2, verbose=1, perplexity=15, n_iter=300)
+    tsne = TSNE(n_components=2, verbose=1, perplexity=30, n_iter=500)
     embeds, labels = shuffle(embeds, labels)
     tsne_results = tsne.fit_transform(embeds)
     fig, ax = plt.subplots(1)
@@ -189,6 +234,9 @@ if __name__ == '__main__':
     
     parser.add_argument('--cuda', default=False,
                     help='use cuda for model predictions (default: False)')
+
+    parser.add_argument('--head_layer', default=8, type=int,
+                    help='number of layers in the projection head (default: 8)')
 
     
 
@@ -220,9 +268,21 @@ if __name__ == '__main__':
     device = "cuda" if args.cuda else "cpu"
 
     # find models
-    model_names = [list(Path(args.model_dir).glob(f"model-{data_type}*"))[0] for data_type in types]
+    model_names = [list(Path(args.model_dir).glob(f"model-{data_type}*"))[0] for data_type in types if len(list(Path(args.model_dir).glob(f"model-{data_type}*"))) > 0]
+    if len(model_names) < len(all_types):
+        print("warning: not all types present in folder")
+
+    obj = defaultdict(list)
     for model_name, data_type in zip(model_names, types):
         print(f"evaluating {data_type}")
 
-        roc_auc = eval_model(model_name, data_type, save_plots=True, device=device)
+        roc_auc = eval_model(model_name, data_type, save_plots=True, device=device, head_layer=args.head_layer)
         print(f"{data_type} AUC: {roc_auc}")
+        obj["defect_type"].append(data_type)
+        obj["roc_auc"].append(roc_auc)
+    
+    # save pandas dataframe
+    eval_dir = Path("eval") / model_name
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(obj)
+    df.to_csv(str(eval_dir) + "_perf.csv")

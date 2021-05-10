@@ -24,7 +24,9 @@ def run_training(data_type="screw",
                  pretrained=True,
                  test_epochs=10,
                  freeze_resnet=20,
-                 learninig_rate=0.03):
+                 learninig_rate=0.03,
+                 optim_name="SGD",
+                 batch_size=64):
     torch.multiprocessing.freeze_support()
     # TODO: use script params for hyperparameter
     # Temperature Hyperparameter currently not used
@@ -45,17 +47,16 @@ def run_training(data_type="screw",
     after_cutpaste_transform.transforms.append(transforms.ToTensor())
     after_cutpaste_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                     std=[0.229, 0.224, 0.225]))
-    #TODO: we might want to normalize the images.
 
     train_transform = transforms.Compose([])
-    train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
-    train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
+    # train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
+    # train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
     train_transform.transforms.append(transforms.Resize((256,256)))
     train_transform.transforms.append(CutPaste(transform = after_cutpaste_transform))
     # train_transform.transforms.append(transforms.ToTensor())
 
     train_data = MVTecAT("Data", data_type, transform = train_transform, size=int(size * (1/min_scale)))
-    dataloader = DataLoader(train_data, batch_size=64,
+    dataloader = DataLoader(train_data, batch_size=batch_size,
                             shuffle=True, num_workers=8, collate_fn=cut_paste_collate_fn,
                             persistent_workers=True, pin_memory=True, prefetch_factor=5)
 
@@ -63,15 +64,22 @@ def run_training(data_type="screw",
     writer = SummaryWriter(Path("logdirs") / model_name)
 
     # create Model:
-    model = ProjectionNet(pretrained=pretrained)
+    model = ProjectionNet(pretrained=pretrained, head_layers=[512,512,512,512,512,512,512,512,128])
     model.to(device)
 
     if freeze_resnet > 0:
         model.freeze_resnet()
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=learninig_rate, momentum=momentum,  weight_decay=weight_decay)
-    scheduler = CosineAnnealingWarmRestarts(optimizer, epochs)
+    if optim_name == "sgd":
+        optimizer = optim.SGD(model.parameters(), lr=learninig_rate, momentum=momentum,  weight_decay=weight_decay)
+        scheduler = CosineAnnealingWarmRestarts(optimizer, epochs)
+        #scheduler = None
+    elif optim_name == "adam":
+        optimizer = optim.Adam(model.parameters(), lr=learninig_rate, weight_decay=weight_decay)
+        scheduler = None
+    else:
+        print(f"ERROR unkown optimizer: {optim_name}")
 
     step = 0
     import torch.autograd.profiler as profiler
@@ -79,6 +87,8 @@ def run_training(data_type="screw",
     for epoch in tqdm(range(epochs)):
         if epoch == freeze_resnet:
             model.unfreeze()
+        
+        batch_embeds = []
         for batch_idx, data in enumerate(dataloader):
             x1, x2 = data
             x1 = x1.to(device)
@@ -90,13 +100,13 @@ def run_training(data_type="screw",
             xc = torch.cat((x1, x2), axis=0)
             embeds, logits = model(xc)
             
-    #         embeds = F.normalize(embeds, p=2, dim=1)
-    #         embeds1, embeds2 = torch.split(embeds,x1.size(0),dim=0)
-    #         ip = torch.matmul(embeds1, embeds2.T)
-    #         ip = ip / temperature
+#         embeds = F.normalize(embeds, p=2, dim=1)
+#         embeds1, embeds2 = torch.split(embeds,x1.size(0),dim=0)
+#         ip = torch.matmul(embeds1, embeds2.T)
+#         ip = ip / temperature
 
-    #         y = torch.arange(0,x1.size(0), device=device)
-    #         loss = loss_fn(ip, torch.arange(0,x1.size(0), device=device))
+#         y = torch.arange(0,x1.size(0), device=device)
+#         loss = loss_fn(ip, torch.arange(0,x1.size(0), device=device))
 
             y = torch.tensor([0, 1], device=device)
             y = y.repeat_interleave(x1.size(0))
@@ -106,7 +116,8 @@ def run_training(data_type="screw",
             # regulize weights:
             loss.backward()
             optimizer.step()
-            scheduler.step(epoch + batch_idx / num_batches)
+            if scheduler is not None:
+                scheduler.step(epoch + batch_idx / num_batches)
             
             writer.add_scalar('loss', loss.item(), step)
             
@@ -117,19 +128,33 @@ def run_training(data_type="screw",
     #         print(y)
             accuracy = torch.true_divide(torch.sum(predicted==y), predicted.size(0))
             writer.add_scalar('acc', accuracy, step)
-            writer.add_scalar('lr', scheduler.get_last_lr()[0], step)
+            if scheduler is not None:
+                writer.add_scalar('lr', scheduler.get_last_lr()[0], step)
             
+            # save embed for validation:
+            if test_epochs > 0 and epoch % test_epochs == 0:
+                batch_embeds.append(embeds.cpu().detach())
+
             step += 1
         writer.add_scalar('epoch', epoch, step)
 
         # run tests
-        if test_epochs > 0:
-            if epoch % test_epochs == 0:
-                # run auc calculation
-                #TODO: create dataset only once.
-                #TODO: train predictor here
-                roc_auc= eval_model(model_name, data_type, device=device, save_plots=False, size=size, show_training_data=False, model=model)
-                writer.add_scalar('eval_auc', roc_auc, step)
+        if test_epochs > 0 and epoch % test_epochs == 0:
+            # run auc calculation
+            #TODO: create dataset only once.
+            #TODO: train predictor here or in the model class itself. Should not be in the eval part
+            #TODO: we might not want to use the training datat because of droupout etc. but it should give a indecation of the model performance???
+            # batch_embeds = torch.cat(batch_embeds)
+            # print(batch_embeds.shape)
+            model.eval()
+            roc_auc= eval_model(model_name, data_type, device=device,
+                                save_plots=False,
+                                size=size,
+                                show_training_data=False,
+                                model=model)
+                                #train_embed=batch_embeds)
+            model.train()
+            writer.add_scalar('eval_auc', roc_auc, step)
 
 
     torch.save(model.state_dict(), model_dir / f"{model_name}.tch")
@@ -151,11 +176,17 @@ if __name__ == '__main__':
     parser.add_argument('--test_epochs', default=10,
                         help='interval to calculate the auc during trainig, if -1 do not calculate test scores, (default: 10)')                  
 
-    parser.add_argument('--freeze_resnet', default=20,
+    parser.add_argument('--freeze_resnet', default=20, type=int,
                         help='number of epochs to freeze resnet (default: 20)')
     
     parser.add_argument('--lr', default=0.03, type=float,
-                        help='learning rate (default: 0.03)')         
+                        help='learning rate (default: 0.03)')
+
+    parser.add_argument('--optim', default="sgd",
+                        help='optimizing algorithm (dafault: "sgd")')
+
+    parser.add_argument('--batch_size', default=64, type=int,
+                        help='batch size, real batchsize is depending on cut paste config normal cutaout has effective batchsize of 2x batchsize (dafault: "64")')   
 
     args = parser.parse_args()
     print(args)
@@ -191,4 +222,6 @@ if __name__ == '__main__':
                      pretrained=args.pretrained,
                      test_epochs=args.test_epochs,
                      freeze_resnet=args.freeze_resnet,
-                     learninig_rate=args.lr)
+                     learninig_rate=args.lr,
+                     optim_name=args.optim,
+                     batch_size=args.batch_size)

@@ -14,25 +14,28 @@ class ProjectionNet(nn.Module):
         # TODO: check if this is really the right architecture
         last_layer = 512
         sequential_layers = []
-        for num_neurons in head_layers[:-1]:
+        for num_neurons in head_layers:
             sequential_layers.append(nn.Linear(last_layer, num_neurons))
-            #TODO: use Batchnormalization?
+            sequential_layers.append(nn.BatchNorm1d(num_neurons))
             sequential_layers.append(nn.ReLU(inplace=True))
             last_layer = num_neurons
         
         #the last layer without activation
-        sequential_layers.append(nn.Linear(last_layer, head_layers[-1]))
-        last_layer = head_layers[-1]
+        #TODO: is this correct? check one classe representation framework paper/code
+        # sequential_layers.append(nn.Linear(last_layer, head_layers[-1]))
+        # last_layer = head_layers[-1]
 
         head = nn.Sequential(
             *sequential_layers
           )
-        self.resnet18.fc = head
+        self.resnet18.fc = nn.Identity()
+        self.head = head
         self.out = nn.Linear(last_layer, 2)
     
     def forward(self, x):
         embeds = self.resnet18(x)
-        logits = self.out(embeds)
+        tmp = self.head(embeds)
+        logits = self.out(tmp)
         return embeds, logits
     
     def freeze_resnet(self):
