@@ -1,6 +1,6 @@
 # Implementation of CutPaste
 
-This is a work in progress PyTorch implementation of [CutPaste: Self-Supervised Learning for Anomaly Detection and  Localization](https://arxiv.org/abs/2104.04015).
+This is a **unofficial** work in progress PyTorch implementation of [CutPaste: Self-Supervised Learning for Anomaly Detection and  Localization](https://arxiv.org/abs/2104.04015).
 
 ## Setup
 Download the MVTec Anomaly detection Dataset from [here](https://www.mvtec.com/company/research/datasets/mvtec-ad) and extract it into a new folder named `Data`.
