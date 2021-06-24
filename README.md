@@ -35,3 +35,16 @@ tensorboard --logdir logdirs
 python eval.py --model_dir models --head_layer 2
 ```
 This will create a new directory `Eval` with plots for each defect type/model.
+
+## Some implementation details
+Only the normal CutPaste augmentation and 2-Class classification variant is implemented.
+
+The pasted image patch always origins from the same image it is pasted to. I'm not sure if this is a Problem and if this is also the case in the original paper/code.
+
+# TODOs
+- [ ] implement Cut-Paste Scar
+- [ ] implement gradCam
+- [ ] implement localization variant
+- [ ] add option to finetune on EfficientNet(B4)
+- [ ] clean up parameters and move them into the arguments of the scripts
+- [ ] compare results of this reimplementation with the results of the paper
