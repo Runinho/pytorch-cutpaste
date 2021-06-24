@@ -87,22 +87,30 @@ def run_training(data_type="screw",
     step = 0
     import torch.autograd.profiler as profiler
     num_batches = len(dataloader)
-    for epoch in tqdm(range(epochs)):
+    def get_data_inf():
+        while True:
+            for out in enumerate(dataloader):
+                yield out
+    dataloader_inf =  get_data_inf()
+    # From paper: "Note that, unlike conventional definition for an epoch,
+    #              we define 256 parameter update steps as one epoch.
+    for step in tqdm(range(epochs*256)):
+        epoch = int(step / 256)
         if epoch == freeze_resnet:
             model.unfreeze()
         
         batch_embeds = []
-        for batch_idx, data in enumerate(dataloader):
-            x1, x2 = data
-            x1 = x1.to(device)
-            x2 = x2.to(device)
+        batch_idx, data = next(dataloader_inf)
+        x1, x2 = data
+        x1 = x1.to(device)
+        x2 = x2.to(device)
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
+        # zero the parameter gradients
+        optimizer.zero_grad()
 
-            xc = torch.cat((x1, x2), axis=0)
-            embeds, logits = model(xc)
-            
+        xc = torch.cat((x1, x2), axis=0)
+        embeds, logits = model(xc)
+        
 #         embeds = F.normalize(embeds, p=2, dim=1)
 #         embeds1, embeds2 = torch.split(embeds,x1.size(0),dim=0)
 #         ip = torch.matmul(embeds1, embeds2.T)
@@ -111,34 +119,33 @@ def run_training(data_type="screw",
 #         y = torch.arange(0,x1.size(0), device=device)
 #         loss = loss_fn(ip, torch.arange(0,x1.size(0), device=device))
 
-            y = torch.tensor([0, 1], device=device)
-            y = y.repeat_interleave(x1.size(0))
-            loss = loss_fn(logits, y)
-            
+        y = torch.tensor([0, 1], device=device)
+        y = y.repeat_interleave(x1.size(0))
+        loss = loss_fn(logits, y)
+        
 
-            # regulize weights:
-            loss.backward()
-            optimizer.step()
-            if scheduler is not None:
-                scheduler.step(epoch + batch_idx / num_batches)
-            
-            writer.add_scalar('loss', loss.item(), step)
-            
-    #         predicted = torch.argmax(ip,axis=0)
-            predicted = torch.argmax(logits,axis=1)
-    #         print(logits)
-    #         print(predicted)
-    #         print(y)
-            accuracy = torch.true_divide(torch.sum(predicted==y), predicted.size(0))
-            writer.add_scalar('acc', accuracy, step)
-            if scheduler is not None:
-                writer.add_scalar('lr', scheduler.get_last_lr()[0], step)
-            
-            # save embed for validation:
-            if test_epochs > 0 and epoch % test_epochs == 0:
-                batch_embeds.append(embeds.cpu().detach())
+        # regulize weights:
+        loss.backward()
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step(epoch + batch_idx / num_batches)
+        
+        writer.add_scalar('loss', loss.item(), step)
+        
+#         predicted = torch.argmax(ip,axis=0)
+        predicted = torch.argmax(logits,axis=1)
+#         print(logits)
+#         print(predicted)
+#         print(y)
+        accuracy = torch.true_divide(torch.sum(predicted==y), predicted.size(0))
+        writer.add_scalar('acc', accuracy, step)
+        if scheduler is not None:
+            writer.add_scalar('lr', scheduler.get_last_lr()[0], step)
+        
+        # save embed for validation:
+        if test_epochs > 0 and epoch % test_epochs == 0:
+            batch_embeds.append(embeds.cpu().detach())
 
-            step += 1
         writer.add_scalar('epoch', epoch, step)
 
         # run tests
