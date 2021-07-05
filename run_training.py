@@ -94,8 +94,8 @@ def run_training(data_type="screw",
     dataloader_inf =  get_data_inf()
     # From paper: "Note that, unlike conventional definition for an epoch,
     #              we define 256 parameter update steps as one epoch.
-    for step in tqdm(range(epochs*256)):
-        epoch = int(step / 256)
+    for step in tqdm(range(epochs)):
+        epoch = int(step / 1)
         if epoch == freeze_resnet:
             model.unfreeze()
         
@@ -128,7 +128,7 @@ def run_training(data_type="screw",
         loss.backward()
         optimizer.step()
         if scheduler is not None:
-            scheduler.step(epoch + batch_idx / num_batches)
+            scheduler.step(epoch)
         
         writer.add_scalar('loss', loss.item(), step)
         
