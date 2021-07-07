@@ -69,7 +69,8 @@ def run_training(data_type="screw",
     # create Model:
     head_layers = [512]*head_layer+[128]
     print(head_layers)
-    model = ProjectionNet(pretrained=pretrained, head_layers=head_layers)
+    num_classes = 2 if cutpate_type is not CutPaste3Way else 3
+    model = ProjectionNet(pretrained=pretrained, head_layers=head_layers, num_classes=num_classes)
     model.to(device)
 
     if freeze_resnet > 0:
