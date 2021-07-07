@@ -5,12 +5,13 @@ import torch
 
 def cut_paste_collate_fn(batch):
     # cutPaste return 2 tuples of tuples we convert them into a list of tuples
-    org_imgs, imgs = list(zip(*batch))
+    img_types = list(zip(*batch))
 #     print(list(zip(*batch)))
-    return torch.stack(org_imgs), torch.stack(imgs)
+    return [torch.stack(imgs) for imgs in img_types]
     
 
 class CutPaste(object):
+    """Base class for both cutpaste variants with common operations"""
     def __init__(self, colorJitter=0.1, transform=None):
         self.transform = transform
         
@@ -28,17 +29,16 @@ class CutPaste(object):
             org_img = self.transform(org_img)
         return org_img, img
     
-class CutPasteNormal(object):
-    """Randomly mask out one or more patches from an image.
+class CutPasteNormal(CutPaste):
+    """Randomly copy one patche from the image and paste it somewere else.
     Args:
-        n_holes (int): Number of patches to cut out of each image.
-        length (int): The length (in pixels) of each square patch.
+        area_ratio (list): list with 2 floats for maximum and minimum area to cut out
+        aspect_ratio (float): minimum area ration. Ration is sampled between aspect_ratio and 1/aspect_ratio.
     """
     def __init__(self, area_ratio=[0.02,0.15], aspect_ratio=0.3, **kwags):
         super(CutPasteNormal, self).__init__(**kwags)
         self.area_ratio = area_ratio
         self.aspect_ratio = aspect_ratio
-        self.transform = transform
 
     def __call__(self, img):
         #TODO: we might want to use the pytorch implementation to calculate the patches from https://pytorch.org/vision/stable/_modules/torchvision/transforms/transforms.html#RandomErasing
@@ -48,8 +48,7 @@ class CutPasteNormal(object):
         # ratio between area_ratio[0] and area_ratio[1]
         ratio_area = random.uniform(self.area_ratio[0], self.area_ratio[1]) * w * h
         
-        # TODO: check if this is realy uniform in (aspect_ratio, 1) ∪ (1, 1/aspect_ratio).
-        # so first we sample from witch bucket and than in the range
+        # sample in log space
         log_ratio = torch.log(torch.tensor((self.aspect_ratio, 1/self.aspect_ratio)))
         aspect = torch.exp(
             torch.empty(1).uniform_(log_ratio[0], log_ratio[1])
@@ -58,7 +57,7 @@ class CutPasteNormal(object):
         cut_w = int(round(math.sqrt(ratio_area * aspect)))
         cut_h = int(round(math.sqrt(ratio_area / aspect)))
         
-        # BIG TODO: also sample from other images. currently we only sample from the image itself
+        # one might also want to sample from other images. currently we only sample from the image itself
         from_location_h = int(random.uniform(0, h - cut_h))
         from_location_w = int(random.uniform(0, w - cut_w))
         
@@ -75,9 +74,15 @@ class CutPasteNormal(object):
         org_img = img.copy()
         img.paste(patch, insert_box)
         
-        return org_img, img
+        return super().__call__(org_img, img)
 
 class CutPasteScar(CutPaste):
+    """Randomly copy one patche from the image and paste it somewere else.
+    Args:
+        width (list): width to sample from. List of [min, max]
+        height (list): height to sample from. List of [min, max]
+        rotation (list): rotation to sample from. List of [min, max]
+    """
     def __init__(self, width=[2,16], height=[10,25], rotation=[-45,45], **kwags):
         super(CutPasteScar, self).__init__(**kwags)
         self.width = width
@@ -119,7 +124,6 @@ class CutPasteScar(CutPaste):
         return super().__call__(org_img, img)
     
 class CutPasteUnion(object):
-    
     def __init__(self, **kwags):
         self.normal = CutPasteNormal(**kwags)
         self.scar = CutPasteScar(**kwags)
@@ -130,3 +134,15 @@ class CutPasteUnion(object):
             return self.normal(img)
         else:
             return self.scar(img)
+
+class CutPaste3Way(object):
+    def __init__(self, **kwags):
+        self.normal = CutPasteNormal(**kwags)
+        self.scar = CutPasteScar(**kwags)
+    
+    def __call__(self, img):
+        org, cutpaste_normal = self.normal(img)
+        _, cutpaste_scar = self.scar(img)
+        
+        return org, cutpaste_normal, cutpaste_scar
+
