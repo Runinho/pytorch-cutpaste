@@ -14,7 +14,7 @@ from torchvision import transforms
 
 
 from dataset import MVTecAT
-from cutpaste import CutPaste, cut_paste_collate_fn
+from cutpaste import CutPasteNormal,CutPasteScar, CutPaste3Way, CutPasteUnion, cut_paste_collate_fn
 from model import ProjectionNet
 from eval import eval_model
 
@@ -27,12 +27,14 @@ def run_training(data_type="screw",
                  learninig_rate=0.03,
                  optim_name="SGD",
                  batch_size=64,
-                 head_layer=8):
+                 head_layer=8,
+                 cutpate_type=CutPasteNormal,
+                 device = "cuda",
+                 workers=8):
     torch.multiprocessing.freeze_support()
     # TODO: use script params for hyperparameter
     # Temperature Hyperparameter currently not used
     temperature = 0.2
-    device = "cuda"
 
     weight_decay = 0.00003
     momentum = 0.9
@@ -53,12 +55,12 @@ def run_training(data_type="screw",
     # train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
     # train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
     train_transform.transforms.append(transforms.Resize((256,256)))
-    train_transform.transforms.append(CutPaste(transform = after_cutpaste_transform))
+    train_transform.transforms.append(cutpate_type(transform = after_cutpaste_transform))
     # train_transform.transforms.append(transforms.ToTensor())
 
     train_data = MVTecAT("Data", data_type, transform = train_transform, size=int(size * (1/min_scale)))
     dataloader = DataLoader(train_data, batch_size=batch_size,
-                            shuffle=True, num_workers=8, collate_fn=cut_paste_collate_fn,
+                            shuffle=True, num_workers=workers, collate_fn=cut_paste_collate_fn,
                             persistent_workers=True, pin_memory=True, prefetch_factor=5)
 
     # Writer will output to ./runs/ directory by default
@@ -101,14 +103,12 @@ def run_training(data_type="screw",
         
         batch_embeds = []
         batch_idx, data = next(dataloader_inf)
-        x1, x2 = data
-        x1 = x1.to(device)
-        x2 = x2.to(device)
+        xs = [x.to(device) for x in data]
 
         # zero the parameter gradients
         optimizer.zero_grad()
 
-        xc = torch.cat((x1, x2), axis=0)
+        xc = torch.cat(xs, axis=0)
         embeds, logits = model(xc)
         
 #         embeds = F.normalize(embeds, p=2, dim=1)
@@ -119,8 +119,9 @@ def run_training(data_type="screw",
 #         y = torch.arange(0,x1.size(0), device=device)
 #         loss = loss_fn(ip, torch.arange(0,x1.size(0), device=device))
 
-        y = torch.tensor([0, 1], device=device)
-        y = y.repeat_interleave(x1.size(0))
+        # calculate label
+        y = torch.arange(len(xs), device=device)
+        y = y.repeat_interleave(xs[0].size(0))
         loss = loss_fn(logits, y)
         
 
@@ -198,8 +199,15 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=64, type=int,
                         help='batch size, real batchsize is depending on cut paste config normal cutaout has effective batchsize of 2x batchsize (dafault: "64")')   
 
-    parser.add_argument('--head_layer', default=8, type=int,
-                    help='number of layers in the projection head (default: 8)')
+    parser.add_argument('--head_layer', default=1, type=int,
+                    help='number of layers in the projection head (default: 1)')
+    
+    parser.add_argument('--variant', default="3way", choices=['normal', 'scar', '3way', 'union'], help='cutpaste variant to use (dafault: "3way")')
+    
+    parser.add_argument('--cuda', default=False,
+                    help='use cuda for training (default: False)')
+    
+    parser.add_argument('--workers', default=8, type=int, help="number of workers to use for data loading (default:8)")
 
 
     args = parser.parse_args()
@@ -225,6 +233,11 @@ if __name__ == '__main__':
     else:
         types = args.type.split(",")
     
+    variant_map = {'normal':CutPasteNormal, 'scar':CutPasteScar, '3way':CutPaste3Way, 'union':CutPasteUnion}
+    variant = variant_map[args.variant]
+    
+    device = "cuda" if args.cuda else "cpu"
+    
     # create modle dir
     Path(args.model_dir).mkdir(exist_ok=True, parents=True)
 
@@ -239,4 +252,7 @@ if __name__ == '__main__':
                      learninig_rate=args.lr,
                      optim_name=args.optim,
                      batch_size=args.batch_size,
-                     head_layer=args.head_layer)
+                     head_layer=args.head_layer,
+                     device=device,
+                     cutpate_type=variant,
+                     workers=args.workers)
