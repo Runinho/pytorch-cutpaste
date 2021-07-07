@@ -5,7 +5,7 @@ from torchvision.models import resnet18
 
 
 class ProjectionNet(nn.Module):
-    def __init__(self, pretrained=True, head_layers=[512,512,512,512,512,512,512,512,128]):
+    def __init__(self, pretrained=True, head_layers=[512,512,512,512,512,512,512,512,128], num_classes=2):
         super(ProjectionNet, self).__init__()
         #self.resnet18 = torch.hub.load('pytorch/vision:v0.9.0', 'resnet18', pretrained=pretrained)
         self.resnet18 = resnet18(pretrained=pretrained)
@@ -30,7 +30,7 @@ class ProjectionNet(nn.Module):
           )
         self.resnet18.fc = nn.Identity()
         self.head = head
-        self.out = nn.Linear(last_layer, 2)
+        self.out = nn.Linear(last_layer, num_classes)
     
     def forward(self, x):
         embeds = self.resnet18(x)
