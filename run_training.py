@@ -68,7 +68,6 @@ def run_training(data_type="screw",
 
     # create Model:
     head_layers = [512]*head_layer+[128]
-    print(head_layers)
     num_classes = 2 if cutpate_type is not CutPaste3Way else 3
     model = ProjectionNet(pretrained=pretrained, head_layers=head_layers, num_classes=num_classes)
     model.to(device)
@@ -88,7 +87,6 @@ def run_training(data_type="screw",
         print(f"ERROR unkown optimizer: {optim_name}")
 
     step = 0
-    import torch.autograd.profiler as profiler
     num_batches = len(dataloader)
     def get_data_inf():
         while True:
@@ -185,7 +183,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-pretrained', dest='pretrained', default=True, action='store_false',
                         help='use pretrained values to initalize ResNet18 , (default: True)')
     
-    parser.add_argument('--test_epochs', default=10,
+    parser.add_argument('--test_epochs', default=10, type=int,
                         help='interval to calculate the auc during trainig, if -1 do not calculate test scores, (default: 10)')                  
 
     parser.add_argument('--freeze_resnet', default=20, type=int,
@@ -238,9 +236,13 @@ if __name__ == '__main__':
     variant = variant_map[args.variant]
     
     device = "cuda" if args.cuda else "cpu"
+    print(f"using device: {device}")
     
     # create modle dir
     Path(args.model_dir).mkdir(exist_ok=True, parents=True)
+    # save config.
+    with open(Path(args.model_dir) / "run_config.txt", "w") as f:
+        f.write(str(args))
 
     for data_type in types:
         print(f"training {data_type}")
