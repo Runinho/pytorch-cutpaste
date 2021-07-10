@@ -1,7 +1,7 @@
 from torch.utils.data import Dataset
 from pathlib import Path
 from PIL import Image
-
+from joblib import Parallel, delayed
 
 class MVTecAT(Dataset):
     """Face Landmarks dataset."""
@@ -25,7 +25,8 @@ class MVTecAT(Dataset):
             self.image_names = list((self.root_dir / defect_name / "train" / "good").glob("*.png"))
             print("loading images")
             # during training we cache the smaller images for performance reasons (not a good coding style)
-            self.imgs = [Image.open(file).resize((size,size)).convert("RGB") for file in self.image_names]
+            #self.imgs = [Image.open(file).resize((size,size)).convert("RGB") for file in self.image_names]
+            self.imgs = Parallel(n_jobs=10)(delayed(lambda file: Image.open(file).resize((size,size)).convert("RGB"))(file) for file in self.image_names)
         else:
             #test mode
             self.image_names = list((self.root_dir / defect_name / "test").glob(str(Path("*") / "*.png")))
