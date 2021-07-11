@@ -18,6 +18,10 @@ from sklearn.covariance import LedoitWolf
 from collections import defaultdict
 import pandas as pd
 
+test_data_eval = None
+test_transform = None
+cached_type = None
+
 def get_train_embeds(model, size, defect_type, transform, device):
     # train data / train kde
     test_data = MVTecAT("Data", defect_type, size, transform=transform, mode="train")
@@ -35,23 +39,30 @@ def get_train_embeds(model, size, defect_type, transform, device):
 
 def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True, model=None, train_embed=None, head_layer=8):
     # create test dataset
-    test_transform = transforms.Compose([])
-    test_transform.transforms.append(transforms.Resize((size,size)))
-    test_transform.transforms.append(transforms.ToTensor())
-    test_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                          std=[0.229, 0.224, 0.225]))
-    test_data = MVTecAT("Data", defect_type, size, transform = test_transform, mode="test")
+    global test_data_eval,test_transform, cached_type
 
-    dataloader_test = DataLoader(test_data, batch_size=64,
-                                 shuffle=False, num_workers=0)
+    # TODO: cache is only nice during training. do we need it?
+    if test_data_eval is None or cached_type != defect_type:
+        cached_type = defect_type
+        test_transform = transforms.Compose([])
+        test_transform.transforms.append(transforms.Resize((size,size)))
+        test_transform.transforms.append(transforms.ToTensor())
+        test_transform.transforms.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                            std=[0.229, 0.224, 0.225]))
+        test_data_eval = MVTecAT("Data", defect_type, size, transform = test_transform, mode="test")
+
+    dataloader_test = DataLoader(test_data_eval, batch_size=64,
+                                    shuffle=False, num_workers=0)
 
     # create model
     if model is None:
         print(f"loading model {modelname}")
         head_layers = [512]*head_layer+[128]
         print(head_layers)
-        model = ProjectionNet(pretrained=False, head_layers=head_layers)
-        model.load_state_dict(torch.load(modelname))
+        weights = torch.load(modelname)
+        classes = weights["out.weight"].shape[0]
+        model = ProjectionNet(pretrained=False, head_layers=head_layers, num_classes=classes)
+        model.load_state_dict(weights)
         model.to(device)
         model.eval()
 

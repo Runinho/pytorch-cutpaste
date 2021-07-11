@@ -103,6 +103,9 @@ class CutPasteScar(CutPaste):
         box = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
         patch = img.crop(box)
         
+        if self.colorJitter:
+            patch = self.colorJitter(patch)
+
         # rotate
         rot_deg = random.uniform(*self.rotation)
         patch = patch.convert("RGBA").rotate(rot_deg,expand=True)
@@ -111,12 +114,8 @@ class CutPasteScar(CutPaste):
         to_location_h = int(random.uniform(0, h - patch.size[0]))
         to_location_w = int(random.uniform(0, w - patch.size[1]))
 
-        insert_box = [to_location_w, to_location_h, to_location_w + patch.size[1], to_location_h + patch.size[0]]
         mask = patch.split()[-1]
         patch = patch.convert("RGB")
-        
-        if self.colorJitter:
-            patch = self.colorJitter(patch)
         
         org_img = img.copy()
         img.paste(patch, (to_location_w, to_location_h), mask=mask)
