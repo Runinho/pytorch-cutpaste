@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
 
-from dataset import MVTecAT
+from dataset import MVTecAT, Repeat
 from cutpaste import CutPasteNormal,CutPasteScar, CutPaste3Way, CutPasteUnion, cut_paste_collate_fn
 from model import ProjectionNet
 from eval import eval_model
@@ -60,7 +60,7 @@ def run_training(data_type="screw",
     # train_transform.transforms.append(transforms.ToTensor())
 
     train_data = MVTecAT("Data", data_type, transform = train_transform, size=int(size * (1/min_scale)))
-    dataloader = DataLoader(train_data, batch_size=batch_size, drop_last=True,
+    dataloader = DataLoader(Repeat(train_data, 3000), batch_size=batch_size, drop_last=True,
                             shuffle=True, num_workers=workers, collate_fn=cut_paste_collate_fn,
                             persistent_workers=True, pin_memory=True, prefetch_factor=5)
 
