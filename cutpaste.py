@@ -102,7 +102,6 @@ class CutPasteScar(CutPaste):
         
         box = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
         patch = img.crop(box)
-        print(patch.size)
         
         if self.colorJitter:
             patch = self.colorJitter(patch)
