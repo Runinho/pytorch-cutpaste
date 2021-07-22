@@ -71,10 +71,10 @@ class CutPasteNormal(CutPaste):
         to_location_w = int(random.uniform(0, w - cut_w))
         
         insert_box = [to_location_w, to_location_h, to_location_w + cut_w, to_location_h + cut_h]
-        org_img = img.copy()
-        img.paste(patch, insert_box)
+        augmented = img.copy()
+        augmented.paste(patch, insert_box)
         
-        return super().__call__(org_img, img)
+        return super().__call__(img, augmented)
 
 class CutPasteScar(CutPaste):
     """Randomly copy one patche from the image and paste it somewere else.
@@ -102,6 +102,7 @@ class CutPasteScar(CutPaste):
         
         box = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
         patch = img.crop(box)
+        print(patch.size)
         
         if self.colorJitter:
             patch = self.colorJitter(patch)
@@ -117,10 +118,10 @@ class CutPasteScar(CutPaste):
         mask = patch.split()[-1]
         patch = patch.convert("RGB")
         
-        org_img = img.copy()
-        img.paste(patch, (to_location_w, to_location_h), mask=mask)
+        augmented = img.copy()
+        augmented.paste(patch, (to_location_w, to_location_h), mask=mask)
         
-        return super().__call__(org_img, img)
+        return super().__call__(img, augmented)
     
 class CutPasteUnion(object):
     def __init__(self, **kwags):
