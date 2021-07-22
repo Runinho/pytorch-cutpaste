@@ -30,7 +30,8 @@ def run_training(data_type="screw",
                  head_layer=8,
                  cutpate_type=CutPasteNormal,
                  device = "cuda",
-                 workers=8):
+                 workers=8,
+                 size = 256):
     torch.multiprocessing.freeze_support()
     # TODO: use script params for hyperparameter
     # Temperature Hyperparameter currently not used
@@ -42,7 +43,6 @@ def run_training(data_type="screw",
     model_name = f"model-{data_type}" + '-{date:%Y-%m-%d_%H_%M_%S}'.format(date=datetime.datetime.now() )
 
     #augmentation:
-    size = 256
     min_scale = 0.5
 
     # create Training Dataset and Dataloader
@@ -54,12 +54,12 @@ def run_training(data_type="screw",
     train_transform = transforms.Compose([])
     # train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
     # train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
-    train_transform.transforms.append(transforms.Resize((256,256)))
+    train_transform.transforms.append(transforms.Resize((size,size)))
     train_transform.transforms.append(cutpate_type(transform = after_cutpaste_transform))
     # train_transform.transforms.append(transforms.ToTensor())
 
     train_data = MVTecAT("Data", data_type, transform = train_transform, size=int(size * (1/min_scale)))
-    dataloader = DataLoader(train_data, batch_size=batch_size,
+    dataloader = DataLoader(train_data, batch_size=batch_size, drop_last=True,
                             shuffle=True, num_workers=workers, collate_fn=cut_paste_collate_fn,
                             persistent_workers=True, pin_memory=True, prefetch_factor=5)
 
@@ -72,7 +72,7 @@ def run_training(data_type="screw",
     model = ProjectionNet(pretrained=pretrained, head_layers=head_layers, num_classes=num_classes)
     model.to(device)
 
-    if freeze_resnet > 0:
+    if freeze_resnet > 0 and pretrained:
         model.freeze_resnet()
 
     loss_fn = torch.nn.CrossEntropyLoss()
