@@ -42,7 +42,7 @@ Only the normal CutPaste augmentation and 2-Class classification variant is impl
 The pasted image patch always origins from the same image it is pasted to. I'm not sure if this is a Problem and if this is also the case in the original paper/code.
 
 # TODOs
-- [ ] implement Cut-Paste Scar
+- [x] implement Cut-Paste Scar
 - [ ] implement gradCam
 - [ ] implement localization variant
 - [ ] add option to finetune on EfficientNet(B4)
