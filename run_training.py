@@ -43,7 +43,7 @@ def run_training(data_type="screw",
     model_name = f"model-{data_type}" + '-{date:%Y-%m-%d_%H_%M_%S}'.format(date=datetime.datetime.now() )
 
     #augmentation:
-    min_scale = 0.5
+    min_scale = 1
 
     # create Training Dataset and Dataloader
     after_cutpaste_transform = transforms.Compose([])
@@ -52,7 +52,7 @@ def run_training(data_type="screw",
                                                                     std=[0.229, 0.224, 0.225]))
 
     train_transform = transforms.Compose([])
-    train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
+    #train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
     train_transform.transforms.append(transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1))
     # train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
     train_transform.transforms.append(transforms.Resize((size,size)))
