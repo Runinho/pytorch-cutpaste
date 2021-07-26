@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
 
-from dataset import MVTecAT
+from dataset import MVTecAT, Repeat
 from cutpaste import CutPasteNormal,CutPasteScar, CutPaste3Way, CutPasteUnion, cut_paste_collate_fn
 from model import ProjectionNet
 from eval import eval_model
@@ -43,7 +43,7 @@ def run_training(data_type="screw",
     model_name = f"model-{data_type}" + '-{date:%Y-%m-%d_%H_%M_%S}'.format(date=datetime.datetime.now() )
 
     #augmentation:
-    min_scale = 0.5
+    min_scale = 1
 
     # create Training Dataset and Dataloader
     after_cutpaste_transform = transforms.Compose([])
@@ -52,14 +52,15 @@ def run_training(data_type="screw",
                                                                     std=[0.229, 0.224, 0.225]))
 
     train_transform = transforms.Compose([])
-    # train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
+    #train_transform.transforms.append(transforms.RandomResizedCrop(size, scale=(min_scale,1)))
+    train_transform.transforms.append(transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1))
     # train_transform.transforms.append(transforms.GaussianBlur(int(size/10), sigma=(0.1,2.0)))
     train_transform.transforms.append(transforms.Resize((size,size)))
     train_transform.transforms.append(cutpate_type(transform = after_cutpaste_transform))
     # train_transform.transforms.append(transforms.ToTensor())
 
     train_data = MVTecAT("Data", data_type, transform = train_transform, size=int(size * (1/min_scale)))
-    dataloader = DataLoader(train_data, batch_size=batch_size, drop_last=True,
+    dataloader = DataLoader(Repeat(train_data, 3000), batch_size=batch_size, drop_last=True,
                             shuffle=True, num_workers=workers, collate_fn=cut_paste_collate_fn,
                             persistent_workers=True, pin_memory=True, prefetch_factor=5)
 
