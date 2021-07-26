@@ -293,7 +293,7 @@ if __name__ == '__main__':
         obj["roc_auc"].append(roc_auc)
     
     # save pandas dataframe
-    eval_dir = Path("eval") / model_name
+    eval_dir = Path("eval") / args.model_dir
     eval_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(obj)
     df.to_csv(str(eval_dir) + "_perf.csv")
