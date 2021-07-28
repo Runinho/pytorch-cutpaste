@@ -92,7 +92,7 @@ python run_training.py --epochs 10000 --test_epochs -1 --no-pretrained --cuda 1 
 ```
 ![training loss](doc/imgs/3way_loss.png)
 ![training accuracy](doc/imgs/3way_acc.png)
-![comparison with Li et al.](doc/imgs/author_vs_thisimpl_CutPaste.png)
+![comparison with Li et al.](doc/imgs/author_vs_thisimpl_CutPaste_3way.png)
 
 # Comparison to Li et al.
 | defect_type   |   CutPaste |   Li et al. CutPaste |   CutPaste (scar) |   Li et al. CutPaste (scar) |   CutPaste (3-way) |   Li et al. CutPaste (3-way) |
