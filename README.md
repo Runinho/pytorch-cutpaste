@@ -75,6 +75,7 @@ We only run the ROC AUC every 32nd update step, here the orange line is an avera
 Note: The validation accuracy (named test set ROC AUC) is using the Mahalanobis distance as anomaly score. It can not be directly compared with the accuracy during training.
 
 ![comparison with Li et al.](doc/imgs/author_vs_thisimpl_CutPaste.png)
+
 Note that for readability, the y-axis starts at 40% AUC ROC.
 ## CutPaste (scar)
 ```
