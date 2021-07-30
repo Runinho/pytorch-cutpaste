@@ -51,7 +51,7 @@ Li et al. use a "batch size of 64 (or 96 for 3-way)". Because the number of imag
 I did not find a model description of the projection head Li et al. use.
 The `--head_layer` parameter is used to vary the number of layers used in this implementation.
 Actually `head_layer + 2` fully connected layers are used.
-Starting with `head_layer` Layer with 512 neurons, followed by a layer with 128 neurons and the output layer with 2 or 3 neurons. The number of neurons depends on the variant. 2 for `normal` and `scar` and 3 for `3way`.
+Starting with `head_layer` layers with 512 neurons, followed by a layer with 128 neurons and the output layer with 2 or 3 neurons. The number of neurons depends on the variant. 2 for `normal` and `scar` and 3 for `3way`.
 
 ### Augmentations used before CutPaste
 Li et al. "apply random translation and
@@ -59,7 +59,7 @@ color jitters for data augmentation".
 This implementation only applies color jitter before the CutPaste augmentation. I tried to use [torchvision.transforms.RandomResizedCrop](https://pytorch.org/vision/stable/transforms.html#torchvision.transforms.RandomResizedCrop) as translation, but in a brief test I did not find that it improves performance.
 
 ### Tensorflow vs PyTorch
-Li et al. use tensorflow for their implementation. This Implementation is using PyTorch.
+Li et al. use tensorflow for their implementation. This implementation is using PyTorch.
 
 # Results
 This implementation only tries to recreate the main results from section 4.1 and shown in table 1.
