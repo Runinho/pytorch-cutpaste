@@ -1,5 +1,3 @@
-import distutils
-
 def str2bool(v):
     """argparse handels type=bool in a weird way.
     See this stack overflow: https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
