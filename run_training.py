@@ -17,7 +17,7 @@ from dataset import MVTecAT, Repeat
 from cutpaste import CutPasteNormal,CutPasteScar, CutPaste3Way, CutPasteUnion, cut_paste_collate_fn
 from model import ProjectionNet
 from eval import eval_model
-from util import str2bool
+from utils import str2bool
 
 def run_training(data_type="screw",
                  model_dir="models",
