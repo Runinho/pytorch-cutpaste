@@ -21,9 +21,6 @@ class ProjectionNet(nn.Module):
             last_layer = num_neurons
         
         #the last layer without activation
-        #TODO: is this correct? check one classe representation framework paper/code
-        # sequential_layers.append(nn.Linear(last_layer, head_layers[-1]))
-        # last_layer = head_layers[-1]
 
         head = nn.Sequential(
             *sequential_layers

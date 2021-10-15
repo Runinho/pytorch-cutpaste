@@ -1,6 +1,6 @@
 # Implementation of CutPaste
 
-This is an **unofficial** work in progress PyTorch reimplementation of [CutPaste: Self-Supervised Learning for Anomaly Detection and  Localization](https://arxiv.org/abs/2104.04015) and in no way affiliated with the original authors. Use at own risk. Pull requests and feedback is appreciated.
+This is an **unofficial** work in progress PyTorch reimplementation of [CutPaste: Self-Supervised Learning for Anomaly Detection and Localization](https://arxiv.org/abs/2104.04015) and in no way affiliated with the original authors. Use at own risk. Pull requests and feedback is appreciated.
 
 ## Setup
 Download the MVTec Anomaly detection Dataset from [here](https://www.mvtec.com/company/research/datasets/mvtec-ad) and extract it into a new folder named `Data`.
@@ -60,6 +60,48 @@ This implementation only applies color jitter before the CutPaste augmentation. 
 
 ### Tensorflow vs PyTorch
 Li et al. use tensorflow for their implementation. This implementation is using PyTorch.
+
+### Kernel Density Estimation
+I implemented two Kernel Density Estimation and mahalanobis distance pipelines.
+Li et al. use sklearn for the density estimation but [Ripple et al.](https://github.com/ORippler/gaussian-ad-mvtec) have their own.
+The `eval.py` has a `--density` flag that can be toggled between `torch` for the Ripple et al. implementation and `sklearn` for my sklearn implementation.
+In my limited testing both implementations have small differences between the resulting ROC AUCs:
+```
+> python eval.py --density torch --cuda 1 --head_layer 2 --save_plots 0| grep AUC
+bottle AUC: 0.9944444444444445
+cable AUC: 0.8549475262368815
+capsule AUC: 0.8232947746310331
+carpet AUC: 0.9329855537720706
+grid AUC: 0.982456140350877
+hazelnut AUC: 0.9160714285714285
+leather AUC: 1.0
+metal_nut AUC: 0.9403714565004888
+pill AUC: 0.8046917621385706
+screw AUC: 0.701988112318098
+tile AUC: 0.9430014430014431
+toothbrush AUC: 0.8972222222222221
+transistor AUC: 0.9008333333333334
+wood AUC: 0.9815789473684211
+zipper AUC: 0.9997373949579832
+
+> python eval.py --density sklearn --cuda 1 --head_layer 2 --save_plots 0| grep AUC
+bottle AUC: 0.9944444444444445
+cable AUC: 0.8549475262368815
+capsule AUC: 0.8232947746310331
+carpet AUC: 0.9329855537720706
+grid AUC: 0.982456140350877
+hazelnut AUC: 0.9160714285714285
+leather AUC: 1.0
+metal_nut AUC: 0.9403714565004888
+pill AUC: 0.8046917621385706
+screw AUC: 0.701988112318098
+tile AUC: 0.9430014430014431
+toothbrush AUC: 0.8972222222222221
+transistor AUC: 0.9008333333333334
+wood AUC: 0.9815789473684211
+zipper AUC: 0.9997373949579832
+``` 
+
 
 # Results
 This implementation only tries to recreate the main results from section 4.1 and shown in table 1.

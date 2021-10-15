@@ -24,7 +24,7 @@ class MVTecAT(Dataset):
             root_dir (string): Directory with the MVTec AD dataset.
             defect_name (string): defect to load.
             transform: Transform to apply to data
-            mode: "train" loads training sammples "test" test samples default "train"
+            mode: "train" loads training samples "test" test samples default "train"
         """
         self.root_dir = Path(root_dir)
         self.defect_name = defect_name
