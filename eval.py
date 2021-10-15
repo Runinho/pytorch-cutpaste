@@ -1,6 +1,5 @@
 from sklearn.metrics import roc_curve, auc
 from sklearn.manifold import TSNE
-from sklearn.neighbors import KernelDensity
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import torch
@@ -14,8 +13,8 @@ from cutpaste import CutPaste, cut_paste_collate_fn
 from sklearn.utils import shuffle
 from sklearn.model_selection import GridSearchCV
 import numpy as np
-from sklearn.covariance import LedoitWolf
 from collections import defaultdict
+from density import GaussianDensitySklearn, GaussianDensityTorch
 import pandas as pd
 from utils import str2bool
 
@@ -38,7 +37,7 @@ def get_train_embeds(model, size, defect_type, transform, device):
     train_embed = torch.cat(train_embed)
     return train_embed
 
-def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True, model=None, train_embed=None, head_layer=8):
+def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256, show_training_data=True, model=None, train_embed=None, head_layer=8, density=GaussianDensityTorch()):
     # create test dataset
     global test_data_eval,test_transform, cached_type
 
@@ -146,53 +145,10 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
         plot_tsne(tsne_labels, tsne_embeds, eval_dir / "tsne.png")
     else:
         eval_dir = Path("unused")
-    # TODO: put the GDE stuff into the Model class and do this at the end of the training
-    # # estemate KDE parameters
-    # # use grid search cross-validation to optimize the bandwidth
-    # params = {'bandwidth': np.logspace(-10, 10, 50)}
-    # grid = GridSearchCV(KernelDensity(), params)
-    # grid.fit(embeds)
-
-    # print("best bandwidth: {0}".format(grid.best_estimator_.bandwidth))
-
-    # # use the best estimator to compute the kernel density estimate
-    # kde = grid.best_estimator_
-    # kde = KernelDensity(kernel='gaussian', bandwidth=1).fit(train_embed)
-    # scores = kde.score_samples(embeds)
-    # print(scores)
-    # we get the probability to be in the correct distribution
-    # but our labels are inverted (1 for out of distribution)
-    # so we have to relabel 
-
-    # use own formulation with malanobis distance
-    # from https://github.com/ORippler/gaussian-ad-mvtec/blob/4e85fb5224eee13e8643b684c8ef15ab7d5d016e/src/gaussian/model.py#L308
-    def mahalanobis_distance(
-        values: torch.Tensor, mean: torch.Tensor, inv_covariance: torch.Tensor
-    ) -> torch.Tensor:
-        """Compute the batched mahalanobis distance.
-        values is a batch of feature vectors.
-        mean is either the mean of the distribution to compare, or a second
-        batch of feature vectors.
-        inv_covariance is the inverse covariance of the target distribution.
-        """
-        assert values.dim() == 2
-        assert 1 <= mean.dim() <= 2
-        assert len(inv_covariance.shape) == 2
-        assert values.shape[1] == mean.shape[-1]
-        assert mean.shape[-1] == inv_covariance.shape[0]
-        assert inv_covariance.shape[0] == inv_covariance.shape[1]
-
-        if mean.dim() == 1:  # Distribution mean.
-            mean = mean.unsqueeze(0)
-        x_mu = values - mean  # batch x features
-        # Same as dist = x_mu.t() * inv_covariance * x_mu batch wise
-        dist = torch.einsum("im,mn,in->i", x_mu, inv_covariance, x_mu)
-        return dist.sqrt()
-    # claculate mean
-    mean = torch.mean(train_embed, axis=0)
-    inv_cov = torch.Tensor(LedoitWolf().fit(train_embed.cpu()).precision_,device="cpu")
-
-    distances = mahalanobis_distance(embeds, mean, inv_cov)
+    
+    print(f"using density estimation {density.__class__.__name__}")
+    density.fit(train_embed)
+    distances = density.predict(embeds)
     #TODO: set threshold on mahalanobis distances and use "real" probabilities
 
     roc_auc = plot_roc(labels, distances, eval_dir / "roc_plot.png", modelname=modelname, save_plots=save_plots)
@@ -250,6 +206,11 @@ if __name__ == '__main__':
     parser.add_argument('--head_layer', default=8, type=int,
                     help='number of layers in the projection head (default: 8)')
 
+    parser.add_argument('--density', default="torch", choices=["torch", "sklearn"],
+                    help='density implementation to use. See `density.py` for both implementations. (default: torch)')
+
+    parser.add_argument('--save_plots', default=True, type=str2bool,
+                    help='save TSNE and roc plots')
     
 
     args = parser.parse_args()
@@ -279,6 +240,12 @@ if __name__ == '__main__':
     
     device = "cuda" if args.cuda else "cpu"
 
+    density_mapping = {
+        "torch": GaussianDensityTorch,
+        "sklearn": GaussianDensitySklearn
+    }
+    density = density_mapping[args.density]
+
     # find models
     model_names = [list(Path(args.model_dir).glob(f"model-{data_type}*"))[0] for data_type in types if len(list(Path(args.model_dir).glob(f"model-{data_type}*"))) > 0]
     if len(model_names) < len(all_types):
@@ -288,7 +255,7 @@ if __name__ == '__main__':
     for model_name, data_type in zip(model_names, types):
         print(f"evaluating {data_type}")
 
-        roc_auc = eval_model(model_name, data_type, save_plots=True, device=device, head_layer=args.head_layer)
+        roc_auc = eval_model(model_name, data_type, save_plots=args.save_plots, device=device, head_layer=args.head_layer, density=density())
         print(f"{data_type} AUC: {roc_auc}")
         obj["defect_type"].append(data_type)
         obj["roc_auc"].append(roc_auc)
