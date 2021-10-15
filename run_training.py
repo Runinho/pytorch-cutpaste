@@ -17,6 +17,7 @@ from dataset import MVTecAT, Repeat
 from cutpaste import CutPasteNormal,CutPasteScar, CutPaste3Way, CutPasteUnion, cut_paste_collate_fn
 from model import ProjectionNet
 from eval import eval_model
+from util import str2bool
 
 def run_training(data_type="screw",
                  model_dir="models",
@@ -204,7 +205,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--variant', default="3way", choices=['normal', 'scar', '3way', 'union'], help='cutpaste variant to use (dafault: "3way")')
     
-    parser.add_argument('--cuda', default=False,
+    parser.add_argument('--cuda', default=False, type=str2bool,
                     help='use cuda for training (default: False)')
     
     parser.add_argument('--workers', default=8, type=int, help="number of workers to use for data loading (default:8)")

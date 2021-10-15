@@ -17,6 +17,7 @@ import numpy as np
 from sklearn.covariance import LedoitWolf
 from collections import defaultdict
 import pandas as pd
+from utils import str2bool
 
 test_data_eval = None
 test_transform = None
@@ -95,8 +96,8 @@ def eval_model(modelname, defect_type, device="cpu", save_plots=False, size=256,
         # also show some of the training data
         show_training_data = False
         if show_training_data:
-            #augmentation settig
-            # TODO: do all of this in a seperate function that we can call in training and evaluation.
+            #augmentation setting
+            # TODO: do all of this in a separate function that we can call in training and evaluation.
             #       very ugly to just copy the code lol
             min_scale = 0.5
 
@@ -243,7 +244,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_dir', default="models",
                     help=' directory contating models to evaluate (default: models)')
     
-    parser.add_argument('--cuda', default=False,
+    parser.add_argument('--cuda', default=False, type=str2bool,
                     help='use cuda for model predictions (default: False)')
 
     parser.add_argument('--head_layer', default=8, type=int,
