@@ -25,6 +25,11 @@ python run_training.py --model_dir models --head_layer 2
 ```
 The Script will train a model for each defect type and save it in the `model_dir` Folder.
 
+To enable training on an Nvidia GPU use the `--cuda 1` flag.
+```
+python run_training.py --model_dir models --head_layer 2 --cuda 1
+```
+
 One can track the training progress of the models with tensorboard:
 ```
 tensorboard --logdir logdirs
