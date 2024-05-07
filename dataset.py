@@ -16,7 +16,9 @@ class Repeat(Dataset):
         return self.org_dataset[idx % self.org_length]
 
 class MVTecAT(Dataset):
-    """Face Landmarks dataset."""
+    """MVTec anomaly detection dataset.
+    Link: https://www.mvtec.com/company/research/datasets/mvtec-ad
+    """
 
     def __init__(self, root_dir, defect_name, size, transform=None, mode="train"):
         """
